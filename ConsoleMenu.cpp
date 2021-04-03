@@ -15,7 +15,13 @@ MenuPage::~MenuPage()
 void MenuStruct::printMenu(std::string title, MenuPageMenu* page, std::string msg)
 {
 	//clear the screen
-	system("cls");
+	CONSOLE_SCREEN_BUFFER_INFO s;
+	HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+	GetConsoleScreenBufferInfo(console, &s);
+	DWORD written = 0;
+	FillConsoleOutputCharacterA(console, ' ', s.dwSize.X * s.dwSize.Y, { 0, 0 }, &written);
+	FillConsoleOutputAttribute(console, s.wAttributes, s.dwSize.X * s.dwSize.Y, { 0, 0 }, &written);
+	SetConsoleCursorPosition(console, { 0, 0 });
 
 	//print the header
 	if (title.size() > 24)
@@ -318,10 +324,12 @@ void MenuStruct::release()
 }
 
 //implementation of the public functions - menu
-bool MenuStruct::getUseCtrl() {
+bool MenuStruct::getUseCtrl() 
+{
 	return useCTRL;
 }
-void MenuStruct::setUseCtrl(bool useCtrl) {
+void MenuStruct::setUseCtrl(bool useCtrl) 
+{
 	useCTRL = useCtrl;
 }
 void MenuStruct::run(uint64_t rootId)
