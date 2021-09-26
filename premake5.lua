@@ -5,22 +5,10 @@ project "console-menu"
 	cppdialect "C++17"
 	staticruntime "On"
 	
-	-- check if the root premake defines a build/target/object-directory
-	if rootBuildDir ~= nil then
-		location (path.join(rootBuildDir, "console-menu"))
-	else
-		location "build"
-	end
-	if rootTargetDir ~= nil then
-		targetdir (path.join(rootTargetDir, "console-menu/%{cfg.buildcfg}-%{cfg.architecture}"))
-	else
-		targetdir "bin/%{cfg.buildcfg}-%{cfg.architecture}"
-	end
-	if rootObjectDir ~= nil then
-		objdir (path.join(rootObjectDir, "console-menu/%{cfg.buildcfg}-%{cfg.architecture}"))
-	else
-		objdir "build/%{cfg.buildcfg}-%{cfg.architecture}"
-	end
+	-- check if the root premake defines paths and directories for the file generation
+	location (rootLocationPath and rootLocationPath or "build")
+	targetdir (path.join(rootTargetDir and rootTargetDir or "bin", "%{cfg.buildcfg}-%{cfg.architecture}"))
+	objdir (path.join(rootObjectDir and rootObjectDir or "build", "%{cfg.buildcfg}-%{cfg.architecture}"))
 	
 	includedirs { "." }
 	files { "**.h", "**.cpp", "*.lua" }
