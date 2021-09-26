@@ -1,21 +1,58 @@
 #include "console-menu.h"
-using namespace std;
 
-//implementation of the constructor-function - menupage
-MenuPage::MenuPage()
-{
+#include <iostream>
+#include <sstream>
+#include <algorithm>
+#define NOMINMAX
+#include <Windows.h>
 
+/* implement the instance interface */
+menu::Instance::Instance() : pHost(0) {}
+menu::Host* menu::Instance::host() {
+	return pHost;
 }
-MenuPage::~MenuPage()
-{
+void menu::Instance::init() {}
+void menu::Instance::teardown() {}
 
+/* implement the layout builder object */
+menu::Layout::Entry::Entry() : id(0) {}
+menu::Layout::Entry::Entry(EntryId id, const std::string& text) : id(id), text(text) {}
+menu::Layout::Layout(bool updateLoop, const std::string& header) : updateLoop(updateLoop), header(header) {}
+bool menu::Layout::add(EntryId id, const std::string& text) {
+	/* check if the corresponding id is invalid or has already been defined */
+	if (id == EntryIdInvalid || std::find_if(pEntries.begin(), pEntries.end(), [id](const Entry& ent) { return ent.id == id; }) != pEntries.end())
+		return false;
+
+	/* add the entry to the array */
+	pEntries.emplace_back(id, text);
+	return true;
 }
 
-//implementation of the private-functions - menu
-void MenuStruct::printMenu(std::string title, MenuPageMenu* page, std::string msg)
-{
-	//clear the screen
-	CONSOLE_SCREEN_BUFFER_INFO s;
+/* implement the page behavior object */
+menu::Behavior::Behavior() : traverse(Traverse::stay) {}
+menu::Behavior::Behavior(const std::string& response, Traverse traverse, const std::string& target) : response(response), target(target), traverse(traverse) {}
+
+/* implement the page interface */
+menu::Page::Page(const char* identifier, const char* title) : pHost(0), pInstance(0), pIdentifier(identifier), pTitle(title) {}
+menu::Host* menu::Page::host() {
+	return pHost;
+}
+menu::Instance* menu::Page::instance() {
+	return pInstance;
+}
+void menu::Page::init() { }
+void menu::Page::teardown() { }
+void menu::Page::load() {}
+void menu::Page::unload() {}
+bool menu::Page::update() {
+	return false;
+}
+
+/* implement the host object */
+menu::Host::Host(bool useCtrl) : pUseCtrl(useCtrl) {}
+void menu::Host::fPrintMenu(const menu::Page* page, const menu::Layout& layout, const std::string& response) {
+	/* clear the console screen */
+	CONSOLE_SCREEN_BUFFER_INFO s = { 0 };
 	HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
 	GetConsoleScreenBufferInfo(console, &s);
 	DWORD written = 0;
@@ -23,736 +60,356 @@ void MenuStruct::printMenu(std::string title, MenuPageMenu* page, std::string ms
 	FillConsoleOutputAttribute(console, s.wAttributes, s.dwSize.X * s.dwSize.Y, { 0, 0 }, &written);
 	SetConsoleCursorPosition(console, { 0, 0 });
 
-	//print the header
-	if (title.size() > 24)
-		title.resize(24);
-	title = " " + title + " ";
-	uint64_t totalLineCount = 62 - title.size();
-	for (uint64_t i = 0; i < totalLineCount; i++)
-	{
-		if (i < (totalLineCount >> 1) + (totalLineCount & 0x01))
-			title = "-" + title;
-		else
-			title = title + "-";
-	}
-	title = "+" + title + "+";
-	cout << title << endl;
+	/* define the header bounds */
+	std::string_view bound = "+--------------------------------------------------------------+";
 
-	//print the string
-	if (page->MenuString.size() > 0)
-	{
-		//print the separate rows
-		uint64_t index = 0;
-		while (true)
-		{
-			uint64_t newIndex = page->MenuString.find('\n', index);
-			if (newIndex == string::npos)
-			{
-				cout << "  " << page->MenuString.substr(index) << endl;
-				break;
-			}
-			cout << "  " << page->MenuString.substr(index, newIndex - index) << endl;
-			index = newIndex + 1;
-			if (page->MenuString.size() > index)
-			{
-				if (page->MenuString.at(index) == '\r')
-					index++;
-			}
-			else
-				break;
+	/* print the top bound, which includes the title */
+	std::string topBound(bound);
+	size_t titleLength = std::min((size_t)24, std::strlen(page->pTitle));
+	size_t titleOffset = (bound.size() - titleLength) / 2;
+	topBound[titleOffset - 1] = ' ';
+	*std::copy(page->pTitle, page->pTitle + titleLength, topBound.begin() + titleOffset) = ' ';
+	std::cout << topBound << std::endl;
+
+	/* print the layout header */
+	if (!layout.header.empty()) {
+		std::stringstream lines(layout.header);
+
+		/* iterate through the header and print it row by row */
+		std::string line;
+		while (std::getline(lines, line))
+			std::cout << " " << line << std::endl;
+		std::cout << bound << std::endl;
+	}
+
+	/* print all of the options */
+	if (!layout.pEntries.empty()) {
+		for (size_t i = 0; i < layout.pEntries.size(); i++) {
+			std::cout << "  [" << (i < 10 && layout.pEntries.size() >= 10 ? "0" : "") << i << "] - ";
+			std::cout << layout.pEntries[i].text << std::endl;
 		}
-		cout << "+--------------------------------------------------------------+" << endl;
+		std::cout << bound << std::endl;
 	}
 
-	//print the menu
-	if (page->entries.size() > 0)
-	{
-		for (uint64_t i = 0; i < page->entries.size(); i++)
-		{
-			if (page->entries.size() >= 10 && i < 10)
-				cout << "  [0" << i << "] - ";
-			else
-				cout << "  [" << i << "] - ";
-			cout << page->entries.at(i).text << endl;
-		}
-		cout << "+--------------------------------------------------------------+" << endl;
-	}
-
-	//print the last message
-	cout << endl;
-	if (msg.size() > 0)
-		cout << msg << endl << endl;
+	/* print the last response */
+	std::cout << std::endl;
+	if (!response.empty())
+		std::cout << response << std::endl << std::endl;
 }
-void MenuStruct::unloadStack()
-{
-	//unload all of the menus
-	for (uint64_t i = loadedStack.size(); i > 0; i--)
-		if(menuPages.at(loadedStack.at(i - 1)).unload != 0)
-			menuPages.at(loadedStack.at(i - 1)).unload(this);
-	loadedStack.clear();
+void menu::Host::fTeardown(menu::Instance* instance) {
+	/* unload all of the currently loaded pages */
+	for (size_t i = pStack.size(); i > 0; i--)
+		pPages[pStack[i - 1]]->unload();
+	pStack.clear();
 
-	//unload the global-data
-	if (globalUnload != 0)
-		globalUnload(this);
+	/* teardown all of the pages */
+	for (size_t i = 0; i < pPages.size(); i++)
+		pPages[i]->teardown();
+	pPages.clear();
+
+	/* teardown the instance */
+	instance->teardown();
 }
-uint64_t MenuStruct::getCTRLNumber()
-{
-	//print the message
-	cout << "select an option (CTRL + NUMPAD; cancel: '+'; backspace: '-'): ";
+menu::Host::Result menu::Host::fGetCTRLNumber(const std::string& text, bool peek, bool print, uint64_t& value) {
+	static constexpr uint8_t KeyMap[12] = { VK_NUMPAD0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7, VK_NUMPAD8, VK_NUMPAD9, VK_ADD, VK_SUBTRACT };
+	value = 0;
 
-	//variables
-	bool control_pressed = false;
-	bool key_added = false;
-	uint64_t value = 0;
-	bool key_state[12];
-	uint16_t charLen = 0;
+	/* flush the input to remove any accidentally pressed keys */
+	fFlushInput();
 
-	//read all of the keystates
-	for (uint8_t i = 0; i < 12; i++)
-		key_state[i] = (((i >= 10) ? GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) : GetAsyncKeyState(VK_NUMPAD0 + i)) & 0x8000);
+	/* notify the user about the requested input */
+	if (!peek || print)
+		std::cout << text << " (CTRL + NUMPAD; abort: '+'; backspace: '-'): ";
+	uint16_t length = 0;
 
-	//enter the loop
+	/* loop until a number has been entered or control has been released, if a number is only optional */
 	do {
-		//check if control has been pressed
-		control_pressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
+		/* check if number can currently be entered (CTRL is down) */
+		if (!(GetAsyncKeyState(VK_CONTROL) & 0x8000))
+			continue;
 
-		//check if control is pressed
-		if (control_pressed)
-		{
-			//loop through the keys
-			for (uint8_t i = 0; i < 12; i++)
-			{
-				if (i >= 10) {
-					if (GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) & 0x8000)
-					{
-						if (!key_state[i])
-						{
-							if (i == 10) {
-								std::cout << '+';
-								charLen++;
-								while (GetAsyncKeyState(VK_CONTROL) & 0x8000);
-								while (charLen-- > 0)
-									std::cout << "\b \b";
-								charLen = 0;
-								key_added = false;
-								value = 0;
-							}
-							else if (charLen > 0) {
-								std::cout << "\b \b";
-								value /= 10;
-								charLen--;
-								if (charLen == 0)
-									key_added = false;
-							}
-							key_state[i] = true;
-						}
-					}
-					else
-						key_state[i] = false;
+		/* cache the current key-state */
+		bool key[12] = { 0 };
+		for (uint8_t i = 0; i < 12; i++)
+			key[i] = GetAsyncKeyState(KeyMap[i]) & 0x8000;
+
+		/* iterate through the keys as long as control is held */
+		do {
+			/* iterate through the keys and check if they have been pressed */
+			for (uint8_t i = 0; i < 12; i++) {
+				/* check the current key-state */
+				if ((GetAsyncKeyState(KeyMap[i]) & 0x8000) == 0x0000) {
+					key[i] = false;
+					continue;
 				}
-				else if (GetAsyncKeyState(VK_NUMPAD0 + i) & 0x8000)
-				{
-					if (!key_state[i])
-					{
-						std::cout << (uint8_t)('0' + i);
-						value = (value * 10) + i;
-						key_added = true;
-						key_state[i] = true;
-						charLen++;
-					}
+				else if (key[i])
+					continue;
+				key[i] = true;
+
+				/* process the affects of the key and apply them to the current number */
+				if (i < 10) {
+					std::cout << (uint8_t)('0' + i) << std::flush;
+					value = (value * 10) + i;
+					length++;
+					continue;
 				}
-				else
-					key_state[i] = false;
+
+				/* check if only the last digit should be removed */
+				if (i == 11) {
+					/* reset the cursor */
+					std::cout << "\b \b" << std::flush;
+					value /= 10;
+					length--;
+					continue;
+				}
+
+				/* clear all digits from the output */
+				for (size_t i = 0; i < length; i++)
+					std::cout << "\b \b";
+				std::cout << std::flush;
+
+				/* clear the entire number */
+				length = 0;
+				value = 0;
+
+				/* wait for control to be released */
+				std::cout << "aborted" << std::endl;
+				while (GetAsyncKeyState(VK_CONTROL) & 0x8000)
+					Sleep(1);
+				fFlushInput();
+				return Result::aborted;
 			}
-		}
-		else
-		{
-			//read all of the keystates
-			for (uint8_t i = 0; i < 12; i++)
-				key_state[i] = (((i >= 10) ? GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) : GetAsyncKeyState(VK_NUMPAD0 + i)) & 0x8000);
-		}
-		Sleep(1);
-	} while (!key_added || control_pressed);
-	cout << endl;
-	return value;
+
+			/* yield cpu time */
+			Sleep(1);
+		} while (GetAsyncKeyState(VK_CONTROL) & 0x8000);
+	} while (!peek && length == 0);
+
+	/* flush the input to remove any accidentally pressed keys */
+	fFlushInput();
+
+	/* break the current line as the cursor is on the same line as the numbers and check if a value has been entered */
+	if (length > 0)
+		std::cout << std::endl;
+	return length > 0 ? Result::number : Result::empty;
 }
-uint64_t MenuStruct::getDefaultNumber()
-{
+menu::Host::Result menu::Host::fGetDefaultNumber(const std::string& text, bool hex, bool abortable, uint64_t& value) {
+	/* loop until a valid number has been read */
 	while (true) {
-		//print the message
-		cout << "select an option: ";
+		/* notify the user about the requested input */
+		std::cout << text << ((hex || abortable) ? " (" : ": ");
+		if (hex)
+			std::cout << "in hex";
+		if (abortable)
+			std::cout << (hex ? "; abort: '!'" : "abort: '!'");
+		if (hex || abortable)
+			std::cout << "): ";
 
-		//receive the input
-		string str;
-		getline(cin, str);
-		
-		//convert the input
-		uint64_t result = 0;
-		stringstream sstr(str);
-		if (sstr.str().size() == 0) {
-			cout << "invalid input!" << endl;
-			continue;
+		/* read all input from the std-in */
+		std::string line;
+		std::getline(std::cin, line);
+		if (!line.empty()) {
+			/* check if the user tried to abort */
+			if (abortable && line.size() == 1 && line[0] == '!')
+				return Result::aborted;
+
+			/* parse the response */
+			std::stringstream sstr(line);
+			if ((sstr >> (hex ? std::hex : std::dec) >> value) && sstr.eof())
+				return Result::number;
 		}
-		sstr >> result;
-		if (!sstr.eof()) {
-			cout << "invalid input!" << endl;
-			continue;
-		}
-		return result;
+		std::cout << "invalid input!" << std::endl;
 	}
 }
-bool MenuStruct::peekCTRLNumber(uint64_t* nbr)
-{
-	//variables
-	bool control_pressed = false;
-	*nbr = 0;
-	bool key_added = false;
-	bool key_state[12];
-	uint16_t charLen = 0;
-
-	//read all of the keystates
-	for (uint8_t i = 0; i < 12; i++)
-		key_state[i] = (((i >= 10) ? GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) : GetAsyncKeyState(VK_NUMPAD0 + i)) & 0x8000);
-
-	//enter the loop
-	do {
-		//check if control has been pressed
-		control_pressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
-
-		//check if control is pressed
-		if (control_pressed)
-		{
-			//loop through the keys
-			for (uint8_t i = 0; i < 12; i++)
-			{
-				if (i >= 10) {
-					if (GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) & 0x8000)
-					{
-						if (!key_state[i])
-						{
-							if (i == 10) {
-								std::cout << '+';
-								charLen++;
-								while (GetAsyncKeyState(VK_CONTROL) & 0x8000);
-								while(charLen-- > 0)
-									std::cout << "\b \b";
-								charLen = 0;
-								return false;
-							}
-							else if (charLen > 0) {
-								std::cout << "\b \b";
-								*nbr /= 10;
-								charLen--;
-								if (charLen == 0)
-									key_added = false;
-							}
-							key_state[i] = true;
-						}
-					}
-					else
-						key_state[i] = false;
-				}
-				else if (GetAsyncKeyState(VK_NUMPAD0 + i) & 0x8000)
-				{
-					if (!key_state[i])
-					{
-						std::cout << (uint8_t)('0' + i);
-						*nbr = (*nbr * 10) + i;
-						key_added = true;
-						key_state[i] = true;
-						charLen++;
-					}
-				}
-				else
-					key_state[i] = false;
-			}
-		}
-		else
-		{
-			//read all of the keystates
-			for (uint8_t i = 0; i < 12; i++)
-				key_state[i] = (((i >= 10) ? GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) : GetAsyncKeyState(VK_NUMPAD0 + i)) & 0x8000);
-		}
-		Sleep(1);
-	} while (control_pressed);
-	if(key_added)
-		cout << endl;
-	return key_added;
-}
-
-//implementation of the object-functions - menu
-MenuStruct* MenuStruct::acquire(bool useCtrl)
-{
-	//allocate the new object
-	MenuStruct* newMenu = (MenuStruct*)malloc(sizeof(MenuStruct));
-	if (newMenu == 0)
-		return 0;
-	memset(newMenu, 0, sizeof(MenuStruct));
-
-	//initialize the resources
-	newMenu->loadedStack = std::vector<uint64_t>();
-	newMenu->menuPages = std::vector<MenuPage>();
-	newMenu->localData = std::vector<void*>();
-	newMenu->useCTRL = useCtrl;
-	return newMenu;
-}
-MenuStruct* MenuStruct::acquire(bool useCtrl, void(*globLoad)(MenuStruct* menuStruct))
-{
-	//allocate the new object
-	MenuStruct* newMenu = (MenuStruct*)malloc(sizeof(MenuStruct));
-	if (newMenu == 0)
-		return 0;
-	memset(newMenu, 0, sizeof(MenuStruct));
-
-	//initialize the resources
-	newMenu->globalLoad = globLoad;
-	newMenu->loadedStack = std::vector<uint64_t>();
-	newMenu->menuPages = std::vector<MenuPage>();
-	newMenu->localData = std::vector<void*>();
-	newMenu->useCTRL = useCtrl;
-	return newMenu;
-}
-void MenuStruct::release()
-{
-	//free all of the resources
-	menuPages.~vector();
-	loadedStack.~vector();
-	localData.~vector();
-
-	//free this object
-	free(this);
-}
-
-//implementation of the public functions - menu
-bool MenuStruct::getUseCtrl() 
-{
-	return useCTRL;
-}
-void MenuStruct::setUseCtrl(bool useCtrl) 
-{
-	useCTRL = useCtrl;
-}
-void MenuStruct::run(uint64_t rootId)
-{
-	//load the global-data
-	if (globalLoad != 0)
-		globalLoad(this);
-
-	//find the root-menu
-	currentMenu = (uint64_t)-1;
-	for (uint64_t i = 0; i < menuPages.size(); i++)
-	{
-		if (menuPages.at(i).id == rootId)
-		{
-			currentMenu = i;
-			break;
-		}
+size_t menu::Host::fResolvePage(const char* identifier) const {
+	for (size_t i = 0; i < pPages.size(); i++) {
+		if (std::strcmp(pPages[i]->pIdentifier, identifier) == 0)
+			return i;
 	}
-	if (currentMenu == (uint64_t)-1)
-	{
-		unloadStack();
-		cout << hex << "root-menu not found <" << rootId << "> !" << endl;
+	return (size_t)-1;
+}
+void menu::Host::fFlushInput() const {
+	FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+}
+menu::Host* menu::Host::acquire(bool useCtrl) {
+	return new Host(useCtrl);
+}
+void menu::Host::release() {
+	delete this;
+}
+bool menu::Host::getUseCtrl() const {
+	return pUseCtrl;
+}
+void menu::Host::setUseCtrl(bool useCtrl) {
+	pUseCtrl = useCtrl;
+}
+void menu::Host::run(menu::Instance* instance) {
+	/* initialize the instance */
+	instance->pHost = this;
+	instance->init();
+
+	/* initialize all of the pages */
+	for (menu::Page* page : pPages) {
+		page->pHost = this;
+		page->pInstance = instance;
+		page->init();
+	}
+
+	/* lookup the root-page */
+	const char* rootIdentifier = instance->root();
+	size_t root = fResolvePage(rootIdentifier);
+
+	/* check if a root has been found */
+	if (root == (size_t)-1) {
+		fTeardown(instance);
+		std::cout << "root page <" << rootIdentifier << "> not found!" << std::endl;
 		return;
 	}
 
-	//load the menu
-	loadedStack.push_back(currentMenu);
-	if (menuPages.at(currentMenu).load != 0)
-		menuPages.at(currentMenu).load(this);
+	/* load the root page */
+	pStack.push_back(root);
+	pPages[root]->load();
 
-	//enter the main-loop
-	string message = "";
-	while (true)
-	{
-		//render the menu
-		bool input_valid = false;
-		uint64_t input_nbr = 0;
-		MenuPageMenu pageMenu;
+	/* enter the primary menu loop */
+	std::string response;
+	while (true) {
+		menu::Page* top = pPages[pStack.back()];
+		menu::EntryId selected = menu::EntryIdInvalid;
+
+		/* loop until valid input has been entered by the user */
 		do {
-			//query the content of the current menu
-			flushConsole();
-			if (menuPages.at(currentMenu).menu == 0) {
-				unloadStack();
-				cout << hex << "function-menu not found <" << menuPages.at(currentMenu).id << "> !" << endl;
-				return;
-			}
-			pageMenu = menuPages.at(currentMenu).menu(this);
-			
-			//print the menu
-			printMenu(menuPages.at(currentMenu).title, &pageMenu, message);
-			
-			//handle the input-request
-			if (!pageMenu.update || menuPages.at(currentMenu).update == 0) {
-				input_nbr = useCTRL ? getCTRLNumber() : getDefaultNumber();
-				if (input_nbr < pageMenu.entries.size())
-					input_valid = true;
+			/* query the layout for the current menu and print it */
+			menu::Layout layout = std::move(top->construct());
+			fPrintMenu(top, layout, response);
+
+			/* read the input from the user */
+			if (!layout.updateLoop) {
+				uint64_t input = 0;
+				while ((pUseCtrl ? fGetCTRLNumber("select an option", false, false, input) : fGetDefaultNumber("select an option", false, false, input)) != Result::number) {}
+				if (input < layout.pEntries.size())
+					selected = layout.pEntries[(size_t)input].id;
 				else
-					message = "index out of range!";
+					response = "index out of range!";
 			}
+
+			/* enter the update loop until the page interrupts it or the user inserts input */
 			else {
-				//enter the wait-loop
-				cout << "select an option (CTRL + NUMPAD; cancel: '+'; backspace: '-'): ";
+				bool wasPrinted = false;
 				do {
-					if (peekCTRLNumber(&input_nbr))
-					{
-						if (input_nbr < pageMenu.entries.size())
-						{
-							input_valid = true;
-							break;
-						}
-						else
-						{
-							message = "index out of range!";
-							input_valid = false;
-							break;
-						}
-					}
-					flushConsole();
-				} while (menuPages.at(currentMenu).update(this));
-			}
-		} while (!input_valid);
-		message.clear();
+					/* check if input has been entered by the user */
+					if (layout.pEntries.empty())
+						continue;
+					uint64_t input = 0;
+					Result result = fGetCTRLNumber("select an option", true, !wasPrinted, input);
+					wasPrinted = true;
+					if (result != Result::number)
+						continue;
 
-		//evaluate the input
-		flushConsole();
-		if (menuPages.at(currentMenu).eval == 0) {
-			unloadStack();
-			cout << hex << "function-eval not found <" << menuPages.at(currentMenu).id << "> !" << endl;
+					/* validate the input */
+					if (input < layout.pEntries.size())
+						selected = layout.pEntries[(size_t)input].id;
+					else
+						response = "index out of range!";
+					break;
+				} while (top->update());
+			}
+		} while (selected == menu::EntryIdInvalid);
+
+		/* evaluate the response */
+		menu::Behavior behavior = top->evaluate(selected);
+		response = behavior.response;
+
+		/* resolve the optional page */
+		size_t target = fResolvePage(behavior.target.c_str());
+
+		/* handle the traversal-request */
+		if (behavior.traverse == menu::Traverse::move || behavior.traverse == menu::Traverse::push) {
+			/* check if the target page is valid */
+			if (target == (size_t)-1) {
+				fTeardown(instance);
+				std::cout << "target page <" << behavior.target << "> not found!" << std::endl;
+				return;
+			}
+
+			/* check if the page is already loaded */
+			for (size_t i = 0; i < pStack.size(); i++) {
+				if (pStack[i] != target)
+					continue;
+				fTeardown(instance);
+				std::cout << "target page <" << behavior.target << "> already loaded!" << std::endl;
+				return;
+			}
+
+			/* unload the current page and replace it by the new page */
+			if (behavior.traverse == menu::Traverse::move) {
+				top->unload();
+				pStack.back() = target;
+			}
+
+			/* push the new page */
+			else
+				pStack.push_back(target);
+
+			/* load the new page */
+			pPages[target]->load();
+		}
+		else if (behavior.traverse == menu::Traverse::pop) {
+			/* unload the current page */
+			top->unload();
+			pStack.pop_back();
+		}
+		else if (behavior.traverse == menu::Traverse::dest) {
+			/* unload the pages until the the stack is empty or the target has been reached */
+			do {
+				pPages[pStack.back()]->unload();
+				pStack.pop_back();
+			} while (pStack.size() > 0 && pStack.back() != target);
+		}
+		else if (behavior.traverse == menu::Traverse::root) {
+			/* unload the pages until the root has been reached */
+			do {
+				pPages[pStack.back()]->unload();
+				pStack.pop_back();
+			} while (pStack.size() > 1);
+		}
+		else if (behavior.traverse == menu::Traverse::exit) {
+			/* unload all resources and exit the menu */
+			fTeardown(instance);
+			std::cout << "menu successfully closed!" << std::endl;
 			return;
 		}
-		MenuPageEval pageEval = menuPages.at(currentMenu).eval(this, pageMenu.entries.at(input_nbr).type);
-		message = pageEval.message;
 
-		//handle the evaluated request
-		if (pageEval.traverse == MenuTraverse::move)
-		{
-			//resolve the new menu
-			uint64_t newMenu = (uint64_t)-1;
-			for (uint64_t i = 0; i < menuPages.size(); i++)
-			{
-				if (menuPages.at(i).id == pageEval.menuId)
-				{
-					newMenu = i;
-					break;
-				}
-			}
-			if (newMenu == (uint64_t)-1)
-			{
-				unloadStack();
-				cout << hex << "new-menu not found <" << pageEval.menuId << "> !" << endl;
-				return;
-			}
-
-			//check if the menu is already loaded
-			for (uint64_t i = 0; i < loadedStack.size(); i++)
-			{
-				if (loadedStack.at(i) == newMenu)
-				{
-					unloadStack();
-					cout << hex << "new-menu already loaded <" << pageEval.menuId << "> !" << endl;
-					return;
-				}
-			}
-
-			//unload the current-menu
-			if (menuPages.at(currentMenu).unload != 0)
-				menuPages.at(currentMenu).unload(this);
-			loadedStack.pop_back();
-
-			//load the new menu
-			currentMenu = newMenu;
-			loadedStack.push_back(currentMenu);
-			if (menuPages.at(currentMenu).load != 0)
-				menuPages.at(currentMenu).load(this);
-		}
-		else if (pageEval.traverse == MenuTraverse::pop)
-		{
-			//unload the current-menu
-			if (menuPages.at(currentMenu).unload != 0)
-				menuPages.at(currentMenu).unload(this);
-			loadedStack.pop_back();
-
-			//check if the stack is empty
-			if (loadedStack.size() == 0)
-			{
-				unloadStack();
-				cout << "returning from last menu!" << endl;
-				return;
-			}
-
-			//update the current menu
-			currentMenu = loadedStack.at(loadedStack.size() - 1);
-		}
-		else if (pageEval.traverse == MenuTraverse::dest)
-		{
-			//unload the menus until the root has been hit or the id
-			do {
-				if (menuPages.at(currentMenu).unload != 0)
-					menuPages.at(currentMenu).unload(this);
-				loadedStack.pop_back();
-				if (loadedStack.size() == 0)
-				{
-					unloadStack();
-					cout << "returning from last menu!" << endl;
-					return;
-				}
-				currentMenu = loadedStack.at(loadedStack.size() - 1);
-			} while (menuPages.at(currentMenu).id != pageEval.menuId);
-		}
-		else if (pageEval.traverse == MenuTraverse::root)
-		{
-			//unload the menus until the root has been hit or the id
-			do {
-				if (menuPages.at(currentMenu).unload != 0)
-					menuPages.at(currentMenu).unload(this);
-				loadedStack.pop_back();
-				if (loadedStack.size() == 0)
-				{
-					unloadStack();
-					cout << "returning from last menu!" << endl;
-					return;
-				}
-				currentMenu = loadedStack.at(loadedStack.size() - 1);
-			} while (loadedStack.size() > 1);
-		}
-		else if (pageEval.traverse == MenuTraverse::push)
-		{
-			//resolve the new menu
-			uint64_t newMenu = (uint64_t)-1;
-			for (uint64_t i = 0; i < menuPages.size(); i++)
-			{
-				if (menuPages.at(i).id == pageEval.menuId)
-				{
-					newMenu = i;
-					break;
-				}
-			}
-			if (newMenu == (uint64_t)-1)
-			{
-				unloadStack();
-				cout << hex << "new-menu not found <" << pageEval.menuId << "> !" << endl;
-				return;
-			}
-
-			//check if the menu is already loaded
-			for (uint64_t i = 0; i < loadedStack.size(); i++)
-			{
-				if (loadedStack.at(i) == newMenu)
-				{
-					unloadStack();
-					cout << hex << "new-menu already loaded <" << pageEval.menuId << "> !" << endl;
-					return;
-				}
-			}
-
-			//load the new menu
-			currentMenu = newMenu;
-			loadedStack.push_back(currentMenu);
-			if (menuPages.at(currentMenu).load != 0)
-				menuPages.at(currentMenu).load(this);
-		}
-		else if (pageEval.traverse == MenuTraverse::exit) {
-			//unload the resources
-			unloadStack();
-			cout << "menu successfully closed!" << endl;
+		/* check if the stack is empty */
+		if (pStack.empty()) {
+			fTeardown(instance);
+			std::cout << "returning from last page!" << std::endl;
 			return;
 		}
 	}
 }
-bool MenuStruct::attach(MenuPage menu)
-{
-	//check if a menu with this id already exists
-	for (uint64_t i = 0; i < menuPages.size(); i++)
-		if (menuPages.at(i).id == menu.id)
-			return false;
+bool menu::Host::add(menu::Page* page) {
+	/* check if a page with the corresponding identifier already exists */
+	if (fResolvePage(page->pIdentifier) != (size_t)-1)
+		return false;
 
-	//add the menu
-	menuPages.push_back(menu);
-	localData.push_back(0);
+	/* add the page to the set of pages */
+	pPages.push_back(page);
 	return true;
 }
-bool MenuStruct::detach(uint64_t menuId)
-{
-	//find the menu
-	for (uint64_t i = 0; i < menuPages.size(); i++) {
-		if (menuPages.at(i).id == menuId) {
-			//check if the menu is loaded
-			for (uint64_t j = 0; j < loadedStack.size(); j++)
-				if (loadedStack.at(j) == i)
-					return false;
-
-			//remove the page
-			menuPages.erase(menuPages.begin() + i);
-			localData.erase(localData.begin() + i);
-			return true;
-		}
-	}
-	return true;
-}
-void MenuStruct::setGlobalLoad(void(*func)(MenuStruct* menuStruct))
-{
-	globalLoad = func;
-}
-void MenuStruct::setGlobalUnload(void(*func)(MenuStruct* menuStruct))
-{
-	globalUnload = func;
-}
-bool MenuStruct::isLoaded(uint64_t id)
-{
-	for (uint64_t i = 0; i < loadedStack.size(); i++)
-	{
-		if (menuPages.at(loadedStack.at(i)).id == id)
+bool menu::Host::isLoaded(const char* identifier) const {
+	/* check if a page with the corresponding identifier is loaded */
+	for (size_t i = 0; i < pStack.size(); i++) {
+		if (std::strcmp(pPages[pStack[i]]->pIdentifier, identifier) == 0)
 			return true;
 	}
 	return false;
 }
-void* MenuStruct::getGlobalData()
-{
-	return globalData;
+bool menu::Host::isAdded(const char* identifier) const {
+	return fResolvePage(identifier) != (size_t)-1;
 }
-void MenuStruct::setGlobalData(void* ptr)
-{
-	globalData = ptr;
-}
-void* MenuStruct::getLocalData(uint64_t menuId)
-{
-	for (uint64_t i = 0; i < menuPages.size(); i++)
-	{
-		if (menuPages.at(i).id == menuId)
-			return localData.at(i);
-	}
-	return 0;
-}
-void MenuStruct::setLocalData(uint64_t menuId, void* ptr)
-{
-	for (uint64_t i = 0; i < menuPages.size(); i++)
-	{
-		if (menuPages.at(i).id == menuId)
-		{
-			localData.at(i) = ptr;
-			return;
-		}
-	}
-}
-bool MenuStruct::getNumber(std::string preString, uint64_t* index)
-{
-	//check if default console-input is requested
-	if (!useCTRL) {
-		//receive the input
-		cout << preString << ": ";
-		string str;
-		getline(cin, str);
-
-		//convert the input
-		uint64_t result = 0;
-		stringstream sstr(str);
-		if (sstr.str().size() == 0)
-			return false;
-		sstr >> result;
-		if (!sstr.eof())
-			return false;
-		*index = result;
-		return true;
-	}
-
-	//print the message
-	cout << preString << " (CTRL + NUMPAD; cancel: '+'; backspace: '-'): ";
-	
-	//variables
-	bool control_pressed = false;
-	bool key_added = false;
-	uint64_t value = 0;
-	bool key_state[12];
-	uint16_t charLen = 0;
-
-	//read all of the keystates
-	for (uint8_t i = 0; i < 12; i++)
-		key_state[i] = (((i >= 10) ? GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) : GetAsyncKeyState(VK_NUMPAD0 + i)) & 0x8000);
-
-	//enter the loop
-	do {
-		//check if control has been pressed
-		control_pressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
-
-		//check if control is pressed
-		if (control_pressed)
-		{
-			//loop through the keys
-			for (uint8_t i = 0; i < 12; i++)
-			{
-				if (i >= 10) {
-					if (GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) & 0x8000)
-					{
-						if (!key_state[i])
-						{
-							if (i == 10) {
-								std::cout << '+';
-								while (GetAsyncKeyState(VK_CONTROL) & 0x8000);
-								return false;
-							}
-							else if(charLen > 0) {
-								std::cout << "\b \b";
-								value /= 10;
-								charLen--;
-								if (charLen == 0)
-									key_added = false;
-							}
-							key_state[i] = true;
-						}
-					}
-					else
-						key_state[i] = false;
-				}
-				else if (GetAsyncKeyState(VK_NUMPAD0 + i) & 0x8000)
-				{
-					if (!key_state[i])
-					{
-						std::cout << (uint8_t)('0' + i);
-						value = (value * 10) + i;
-						key_added = true;
-						key_state[i] = true;
-						charLen++;
-					}
-				}
-				else
-					key_state[i] = false;
-			}
-		}
-		else
-		{
-			//read all of the keystates
-			for (uint8_t i = 0; i < 12; i++)
-				key_state[i] = (((i >= 10) ? GetAsyncKeyState(i == 10 ? VK_ADD : VK_SUBTRACT) : GetAsyncKeyState(VK_NUMPAD0 + i)) & 0x8000);
-		}
-		Sleep(1);
-	} while (!key_added || control_pressed);
-	*index = value;
-	cout << endl;
-	return true;
-}
-bool MenuStruct::getNumberHex(std::string preString, uint64_t* index)
-{
-	//print the message
-	cout << preString << " (in hex): ";
-
-	*index = 0;
-	while (true) {
-		std::string str;
-		flushConsole();
-		getline(std::cin, str);
-		if (str.size() > 0)
-		{
-			//receive the input
-			std::stringstream sstr(str);
-			sstr >> std::hex >> *index;
-			if (!sstr.eof())
-				return false;
-			else
-				return true;
-		}
-	}
-}
-void MenuStruct::flushConsole()
-{
-	FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+bool menu::Host::getNumber(const std::string& text, uint64_t& value, bool hex) {
+	/* check if the control-input method should be used */
+	if (pUseCtrl && !hex)
+		return fGetCTRLNumber(text, false, false, value) == Result::number;
+	return fGetDefaultNumber(text, hex, true, value) == Result::number;
 }

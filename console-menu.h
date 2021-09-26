@@ -1,136 +1,159 @@
 #pragma once
-#include <Windows.h>
+
+#include <inttypes.h>
 #include <string>
 #include <vector>
-#include <inttypes.h>
-#include <iostream>
-#include <sstream>
 
-//predefine the class
-class MenuStruct;
+namespace menu {
+	class Host;
 
-//create the menupage-class
-enum class MenuTraverse : uint8_t
-{
-	stay,
-	move,
-	push, 
-	pop, 
-	dest,
-	root,
-	exit
-};
-struct MenuEntry
-{
-	uint64_t type;
-	std::string text;
-	MenuEntry()
-	{
-		type = 0;
-		text = "";
-	}
-	MenuEntry(uint64_t tp, std::string txt)
-	{
-		type = tp;
-		text = txt;
-	}
-};
-struct MenuPageMenu
-{
-	bool update;
-	std::vector<MenuEntry> entries;
-	std::string MenuString;
-	MenuPageMenu()
-	{
-		update = false;
-		entries = std::vector<MenuEntry>();
-		MenuString = "";
-	}
-	MenuPageMenu(bool updateLoop, std::string String)
-	{
-		update = updateLoop;
-		entries = std::vector<MenuEntry>();
-		MenuString = String;
-	}
-};
-struct MenuPageEval
-{
-	std::string message;
-	MenuTraverse traverse;
-	uint64_t menuId;
-	MenuPageEval()
-	{
-		traverse = MenuTraverse::stay;
-		menuId = 0;
-		message = "";
-	}
-	MenuPageEval(std::string msg, MenuTraverse trav, uint64_t id)
-	{
-		message = msg;
-		traverse = trav;
-		menuId = id;
-	}
-};
-struct MenuPage
-{
-	//implement the constructors
-	MenuPage();
-	~MenuPage();
-	
-	//define the attributes used to describe the menu
-	uint64_t id;
-	const char* title;
+	/* define the types and enums */
+	using EntryId = size_t;
+	static constexpr EntryId EntryIdInvalid = (EntryId)-1;
+	enum class Traverse : uint8_t {
+		stay,
+		move,
+		push,
+		pop,
+		dest,
+		root,
+		exit
+	};
 
-	//define the functions
-	void(*load)(MenuStruct* menuStruct);
-	void(*unload)(MenuStruct* menuStruct);
-	bool(*update)(MenuStruct* menuStruct);
-	MenuPageMenu(*menu)(MenuStruct* menuStruct);
-	MenuPageEval(*eval)(MenuStruct* menuStruct, uint64_t type);
-};
+	/* define the instance interface */
+	class Instance {
+		friend class Host;
+	private:
+		Host* pHost;
 
-//create the menustruct-class
-class MenuStruct
-{
-private:
-	std::vector<uint64_t> loadedStack;
-	std::vector<MenuPage> menuPages;
-	std::vector<void*> localData;
-	uint64_t currentMenu;
-	void* globalData;
-	void(*globalLoad)(MenuStruct* menuStruct);
-	void(*globalUnload)(MenuStruct* menuStruct);
-	bool useCTRL;
-private:
-	void printMenu(std::string title, MenuPageMenu* page, std::string msg);
-	void unloadStack();
-	uint64_t getCTRLNumber();
-	uint64_t getDefaultNumber();
-	bool peekCTRLNumber(uint64_t* nbr);
-public:
-	MenuStruct() = delete;
-	MenuStruct(const MenuStruct& ms) = delete;
-	MenuStruct(const MenuStruct&& ms) = delete;
-	MenuStruct(MenuStruct* ms) = delete;
-	~MenuStruct() = delete;
-public:
-	static MenuStruct* acquire(bool useCtrl);
-	static MenuStruct* acquire(bool useCtrl, void(*globLoad)(MenuStruct* menuStruct));
-	void release();
-public:
-	bool getUseCtrl();
-	void setUseCtrl(bool useCtrl);
-	void run(uint64_t rootId);
-	bool attach(MenuPage menu);
-	bool detach(uint64_t menuId);
-	void setGlobalLoad(void(*func)(MenuStruct* menuStruct));
-	void setGlobalUnload(void(*func)(MenuStruct* menuStruct));
-	bool isLoaded(uint64_t id);
-	void* getGlobalData();
-	void setGlobalData(void* ptr);
-	void* getLocalData(uint64_t menuId);
-	void setLocalData(uint64_t menuId, void* ptr);
-	bool getNumber(std::string preString, uint64_t* index);
-	bool getNumberHex(std::string preString, uint64_t* index);
-	void flushConsole();
-};
+	protected:
+		Instance();
+		virtual ~Instance() = default;
+		Instance(Instance&&) = delete;
+		Instance(const Instance&) = delete;
+
+	public:
+		Host* host();
+		virtual void init();
+		virtual void teardown();
+		virtual const char* root() = 0;
+	};
+
+	/* define the layout builder object */
+	class Layout {
+		friend class Host;
+	private:
+		struct Entry {
+		public:
+			EntryId id;
+			std::string text;
+
+		public:
+			Entry();
+			Entry(EntryId id, const std::string& text);
+		};
+
+	private:
+		std::vector<Entry> pEntries;
+
+	public:
+		bool updateLoop;
+		std::string header;
+
+	public:
+		Layout(bool updateLoop, const std::string& header);
+		~Layout() = default;
+		Layout(Layout&&) = default;
+		Layout(const Layout&) = default;
+
+	public:
+		bool add(EntryId id, const std::string& text);
+	};
+
+	/* define the page behavior object */
+	class Behavior {
+		friend class Host;
+	public:
+		std::string response;
+		std::string target;
+		Traverse traverse;
+
+	public:
+		Behavior();
+		Behavior(const std::string& response, Traverse traverse, const std::string& target = "");
+		~Behavior() = default;
+		Behavior(Behavior&&) = default;
+		Behavior(const Behavior&) = default;
+	};
+
+	/* define the page interface */
+	class Page {
+		friend class Host;
+	private:
+		Host* pHost;
+		Instance* pInstance;
+		const char* pIdentifier;
+		const char* pTitle;
+
+	protected:
+		Page(const char* identifier, const char* title);
+		virtual ~Page() = default;
+		Page(Page&&) = delete;
+		Page(const Page&) = delete;
+
+	public:
+		Host* host();
+		Instance* instance();
+		virtual void init();
+		virtual void teardown();
+		virtual void load();
+		virtual void unload();
+		virtual bool update();
+		virtual Layout construct() = 0;
+		virtual Behavior evaluate(EntryId id) = 0;
+	};
+
+	/* define the host object */
+	class Host {
+	private:
+		enum class Result : uint8_t {
+			number,
+			aborted,
+			empty
+		};
+
+	private:
+		std::vector<size_t> pStack;
+		std::vector<menu::Page*> pPages;
+		bool pUseCtrl;
+
+	private:
+		Host(bool useCtrl);
+		Host(Host&&) = delete;
+		Host(const Host&) = delete;
+		~Host() = default;
+
+	private:
+		void fPrintMenu(const menu::Page* page, const menu::Layout& layout, const std::string& response);
+		void fTeardown(menu::Instance* instance);
+		Result fGetCTRLNumber(const std::string& text, bool peek, bool print, uint64_t& value);
+		Result fGetDefaultNumber(const std::string& text, bool hex, bool abortable, uint64_t& value);
+		size_t fResolvePage(const char* identifier) const;
+		void fFlushInput() const;
+
+	public:
+		static Host* acquire(bool useCtrl);
+		void release();
+
+	public:
+		bool getUseCtrl() const;
+		void setUseCtrl(bool useCtrl);
+
+		void run(menu::Instance* instance);
+		bool add(menu::Page* page);
+		bool isLoaded(const char* identifier) const;
+		bool isAdded(const char* identifier) const;
+
+		bool getNumber(const std::string& text, uint64_t& value, bool hex);
+	};
+}
