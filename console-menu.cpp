@@ -156,10 +156,12 @@ menu::Host::Result menu::Host::fGetCTRLNumber(const std::string& text, bool peek
 
 				/* check if only the last digit should be removed */
 				if (i == 11) {
-					/* reset the cursor */
-					std::cout << "\b \b" << std::flush;
-					value /= 10;
-					length--;
+					if (length > 0) {
+						/* reset the cursor */
+						std::cout << "\b \b" << std::flush;
+						value /= 10;
+						length--;
+					}
 					continue;
 				}
 
