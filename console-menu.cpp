@@ -75,7 +75,7 @@ void menu::Host::fPrintMenu(const menu::Page* page, const menu::Layout& layout, 
 	if (!layout.header.empty()) {
 		std::stringstream lines(layout.header);
 
-		/* iterate through the header and print it row by row */
+		/* iterate through the header and print it row by row and indent it */
 		std::string line;
 		while (std::getline(lines, line))
 			std::cout << " " << line << std::endl;
@@ -91,10 +91,15 @@ void menu::Host::fPrintMenu(const menu::Page* page, const menu::Layout& layout, 
 		std::cout << bound << std::endl;
 	}
 
-	/* print the last response */
+	/* print the last response line by line and indent it */
 	std::cout << std::endl;
-	if (!response.empty())
-		std::cout << response << std::endl << std::endl;
+	if (!response.empty()) {
+		std::stringstream lines(response);
+		std::string line;
+		while (std::getline(lines, line))
+			std::cout << " " << line << std::endl;
+		std::cout << std::endl;
+	}
 }
 void menu::Host::fTeardown(menu::Instance* instance) {
 	/* unload all of the currently loaded pages */
