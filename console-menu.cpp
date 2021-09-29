@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Copyright (c) 2021 Bjoern Boss Henrichsen */
 #include "console-menu.h"
 
 #include <iostream>
@@ -61,7 +63,7 @@ void menu::Host::fPrintMenu(const menu::Page* page, const menu::Layout& layout, 
 	SetConsoleCursorPosition(console, { 0, 0 });
 
 	/* define the header bounds */
-	std::string_view bound = "+--------------------------------------------------------------+";
+	std::string_view bound = "+------------------------------------------------------------------------------+";
 
 	/* print the top bound, which includes the title */
 	std::string topBound(bound);
@@ -370,7 +372,7 @@ void menu::Host::run(menu::Instance* instance) {
 			do {
 				pPages[pStack.back()]->unload();
 				pStack.pop_back();
-			} while (pStack.size() > 0 && pStack.back() != target);
+			} while (!pStack.empty() && pStack.back() != target);
 		}
 		else if (behavior.traverse == menu::Traverse::root) {
 			/* unload the pages until the root has been reached */

@@ -70,17 +70,17 @@ Afterwards a `menu::Host` object needs to be constructed, which will run the men
     host->release();
 
 ## Example of the layout of one page
-    +------------------------ some header -------------------------+
+    +-------------------------------- some header ---------------------------------+
      Some textual information
      This is still part of that information
-    +--------------------------------------------------------------+
+    +------------------------------------------------------------------------------+
       [00] - exit
       [01] - return
       [02] - option 1
       [03] - option 2
       [04] - option 3
       [05] - another option
-    +--------------------------------------------------------------+
+    +------------------------------------------------------------------------------+
 
      Response from the last Page.
      This is some result...
