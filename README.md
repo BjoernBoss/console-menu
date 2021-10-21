@@ -9,6 +9,8 @@ Primary use case is to build more complex interfaces in the console and being ab
 ## Preparing/Compiling the library
 This library uses premake5 as its build system. Clone the repository into your project, include the library in your premake5.lua file, and link against it. 
 
+    $ git clone https://github.com/BjoernBoss/console-menu.git
+
 The lua file checks for some variables to determine the locations for its file generation:
 
     rootLocationPath: Location of the actual build files (if variable is undefined, defaults to ./build)
